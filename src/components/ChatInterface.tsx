@@ -68,7 +68,25 @@ export default function ChatInterface() {
 
     try {
       const apiKey = process.env.GEMINI_API_KEY;
-      const ai = new GoogleGenAI({ apiKey: apiKey || '' });
+      
+      if (!apiKey || apiKey === '') {
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `**API Key Missing:** Please add your \`GEMINI_API_KEY\` to your environment variables or secrets. 
+          
+If you are using **AI Studio**, add it in the **Settings > Secrets** panel. 
+If you are using **Vercel**, add it in **Project Settings > Environment Variables**.
+
+[Get a free Gemini API Key here](https://aistudio.google.com/app/apikey)`,
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, errorMessage]);
+        setIsLoading(false);
+        return;
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
       const model = "gemini-3-flash-preview";
       
       const systemInstruction = `

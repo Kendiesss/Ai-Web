@@ -1,0 +1,216 @@
+import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Send, User, Bot, Sparkles, ChevronRight } from 'lucide-react';
+import { GoogleGenAI } from '@google/genai';
+import { cn } from '../lib/utils';
+import { resumeData } from '../data/resume';
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
+
+const QUICK_QUESTIONS = [
+  "What are your top skills?",
+  "Tell me about your experience.",
+  "What's your educational background?",
+  "How can I contact you?",
+];
+
+export default function ChatInterface() {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content: "Hi there! I'm Ken's AI assistant. I can tell you about his skills, experience, and projects. What would you like to know?",
+      timestamp: new Date(),
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isLoading]);
+
+  const handleSend = async (text: string) => {
+    if (!text.trim() || isLoading) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: text,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const model = "gemini-3-flash-preview";
+      
+      const systemInstruction = `
+        You are a professional Virtual Assistant for Ken Angeles, a Senior Full-stack Developer.
+        Your goal is to answer questions about Ken's professional background based on the following resume data:
+        ${JSON.stringify(resumeData, null, 2)}
+        
+        Guidelines:
+        - Be professional, friendly, and concise.
+        - If asked about something not in the resume, politely state that you don't have that information but can provide his contact details.
+        - Use markdown for formatting (bolding, lists) when appropriate.
+        - Highlight his expertise in Next.js, AI, and Full-stack development.
+      `;
+
+      const chat = ai.chats.create({
+        model,
+        config: {
+          systemInstruction,
+        },
+      });
+
+      const response = await chat.sendMessage({ message: text });
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: response.text || "I'm sorry, I couldn't process that request.",
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, aiResponse]);
+    } catch (error) {
+      console.error('Chat error:', error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: "I'm having a bit of trouble connecting right now. Please try again in a moment.",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full max-w-4xl mx-auto bg-slate-950/50 backdrop-blur-xl border border-slate-800/50 rounded-2xl overflow-hidden shadow-2xl">
+      {/* Header */}
+      <div className="px-6 py-4 border-bottom border-slate-800/50 bg-slate-900/40 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-400 border border-teal-500/30">
+            <Bot size={24} />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-slate-100">Ken's AI Assistant</h2>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Online</span>
+            </div>
+          </div>
+        </div>
+        <Sparkles className="text-teal-400/50" size={20} />
+      </div>
+
+      {/* Messages */}
+      <div 
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent"
+      >
+        <AnimatePresence initial={false}>
+          {messages.map((msg) => (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              className={cn(
+                "flex items-start gap-4 max-w-[85%]",
+                msg.role === 'user' ? "ml-auto flex-row-reverse" : "mr-auto"
+              )}
+            >
+              <div className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center shrink-0 border",
+                msg.role === 'user' 
+                  ? "bg-teal-500/10 border-teal-500/30 text-teal-400" 
+                  : "bg-slate-800 border-slate-700 text-slate-400"
+              )}>
+                {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+              </div>
+              
+              <div className={cn(
+                "px-4 py-3 rounded-2xl text-sm leading-relaxed",
+                msg.role === 'user'
+                  ? "bg-teal-500 text-white rounded-tr-none shadow-lg shadow-teal-500/20"
+                  : "bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none"
+              )}>
+                {msg.content}
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        
+        {isLoading && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-4 mr-auto"
+          >
+            <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
+              <Bot size={16} />
+            </div>
+            <div className="bg-slate-900 border border-slate-800 px-4 py-3 rounded-2xl rounded-tl-none">
+              <div className="flex gap-1">
+                <span className="w-1.5 h-1.5 bg-teal-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                <span className="w-1.5 h-1.5 bg-teal-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                <span className="w-1.5 h-1.5 bg-teal-400 rounded-full animate-bounce" />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </div>
+
+      {/* Quick Questions */}
+      <div className="px-6 py-3 bg-slate-950/30 flex flex-wrap gap-2">
+        {QUICK_QUESTIONS.map((q) => (
+          <button
+            key={q}
+            onClick={() => handleSend(q)}
+            disabled={isLoading}
+            className="px-3 py-1.5 text-xs font-medium text-slate-300 bg-slate-900/50 border border-slate-800 rounded-full hover:border-teal-500/50 hover:text-teal-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {q}
+          </button>
+        ))}
+      </div>
+
+      {/* Input */}
+      <form 
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSend(input);
+        }}
+        className="p-6 bg-slate-900/40 border-t border-slate-800/50 flex items-center gap-4"
+      >
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask me anything about Ken..."
+          className="flex-1 bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/50 transition-all"
+        />
+        <button
+          type="submit"
+          disabled={!input.trim() || isLoading}
+          className="w-12 h-12 rounded-xl bg-teal-500 text-white flex items-center justify-center hover:bg-teal-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-teal-500/20"
+        >
+          <Send size={20} />
+        </button>
+      </form>
+    </div>
+  );
+}

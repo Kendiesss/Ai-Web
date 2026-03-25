@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, User, Bot, Sparkles, ChevronRight } from 'lucide-react';
-import { GoogleGenAI } from '@google/genai';
+import { Send, User, Bot, Sparkles } from 'lucide-react';
+import { GoogleGenAI, GenerateContentResponse } from '@google/genai';
 import { cn } from '../lib/utils';
 import { resumeData } from '../data/resume';
 
@@ -31,12 +31,26 @@ export default function ChatInterface() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
+  // Auto-scroll to bottom
+  const scrollToBottom = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+  };
+
+  useEffect(() => {
+    scrollToBottom();
   }, [messages, isLoading]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
+    }
+  }, [input]);
 
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading) return;
@@ -53,7 +67,12 @@ export default function ChatInterface() {
     setIsLoading(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error('GEMINI_API_KEY is not configured. Please check your environment variables.');
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
       const model = "gemini-3-flash-preview";
       
       const systemInstruction = `
@@ -68,28 +87,44 @@ export default function ChatInterface() {
         - Highlight his expertise in Next.js, AI, and Full-stack development.
       `;
 
-      const chat = ai.chats.create({
+      const aiMessageId = (Date.now() + 1).toString();
+      const aiMessage: Message = {
+        id: aiMessageId,
+        role: 'assistant',
+        content: '',
+        timestamp: new Date(),
+      };
+
+      setMessages((prev) => [...prev, aiMessage]);
+
+      const streamResponse = await ai.models.generateContentStream({
         model,
+        contents: text,
         config: {
           systemInstruction,
         },
       });
 
-      const response = await chat.sendMessage({ message: text });
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: response.text || "I'm sorry, I couldn't process that request.",
-        timestamp: new Date(),
-      };
+      let fullContent = '';
+      for await (const chunk of streamResponse) {
+        const c = chunk as GenerateContentResponse;
+        const chunkText = c.text || '';
+        fullContent += chunkText;
+        
+        setMessages((prev) => 
+          prev.map((msg) => 
+            msg.id === aiMessageId ? { ...msg, content: fullContent } : msg
+          )
+        );
+        scrollToBottom();
+      }
 
-      setMessages((prev) => [...prev, aiResponse]);
     } catch (error) {
       console.error('Chat error:', error);
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: "I'm having a bit of trouble connecting right now. Please try again in a moment.",
+        content: `**Error:** ${error instanceof Error ? error.message : 'An unknown error occurred while connecting to the AI.'}`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -98,10 +133,17 @@ export default function ChatInterface() {
     }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend(input);
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full max-w-6xl mx-auto bg-slate-950/50 backdrop-blur-xl border border-slate-800/50 rounded-2xl overflow-hidden shadow-2xl">
+    <div className="flex flex-col h-full max-w-6xl mx-auto bg-slate-950/50 backdrop-blur-xl border border-slate-800/50 rounded-2xl overflow-hidden shadow-2xl flex-1">
       {/* Header */}
-      <div className="px-6 py-3 border-b border-slate-800/50 bg-slate-900/40 flex items-center justify-between">
+      <div className="px-6 py-3 border-b border-slate-800/50 bg-slate-900/40 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-teal-500/20 flex items-center justify-center text-teal-400 border border-teal-500/30">
             <Bot size={20} />
@@ -143,18 +185,18 @@ export default function ChatInterface() {
               </div>
               
               <div className={cn(
-                "px-3 py-2 md:px-4 md:py-3 rounded-2xl text-xs md:text-sm leading-relaxed",
+                "px-3 py-2 md:px-4 md:py-3 rounded-2xl text-xs md:text-sm leading-relaxed whitespace-pre-wrap",
                 msg.role === 'user'
                   ? "bg-teal-500 text-white rounded-tr-none shadow-lg shadow-teal-500/20"
                   : "bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none"
               )}>
-                {msg.content}
+                {msg.content || (msg.role === 'assistant' && <span className="animate-pulse">Thinking...</span>)}
               </div>
             </motion.div>
           ))}
         </AnimatePresence>
         
-        {isLoading && (
+        {isLoading && messages[messages.length - 1]?.content === '' && (
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -175,7 +217,7 @@ export default function ChatInterface() {
       </div>
 
       {/* Quick Questions */}
-      <div className="px-4 py-2 bg-slate-950/30 flex flex-wrap gap-1.5">
+      <div className="px-4 py-2 bg-slate-950/30 flex flex-wrap gap-1.5 shrink-0">
         {QUICK_QUESTIONS.map((q) => (
           <button
             key={q}
@@ -189,28 +231,37 @@ export default function ChatInterface() {
       </div>
 
       {/* Input */}
-      <form 
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSend(input);
-        }}
-        className="p-4 md:p-6 bg-slate-900/40 border-t border-slate-800/50 flex items-center gap-3 md:gap-4"
-      >
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask me anything..."
-          className="flex-1 bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-2.5 text-xs md:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/50 transition-all"
-        />
-        <button
-          type="submit"
-          disabled={!input.trim() || isLoading}
-          className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-teal-500 text-white flex items-center justify-center hover:bg-teal-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-teal-500/20"
+      <div className="p-4 md:p-6 bg-slate-900/40 border-t border-slate-800/50 shrink-0">
+        <form 
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSend(input);
+          }}
+          className="flex items-end gap-3 md:gap-4"
         >
-          <Send size={18} md:size={20} />
-        </button>
-      </form>
+          <div className="flex-1 relative">
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask me anything..."
+              className="w-full bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-3 text-xs md:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500/50 transition-all resize-none scrollbar-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!input.trim() || isLoading}
+            className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-teal-500 text-white flex items-center justify-center hover:bg-teal-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-teal-500/20 shrink-0"
+          >
+            <Send size={18} />
+          </button>
+        </form>
+        <p className="text-[9px] text-slate-500 mt-2 text-center uppercase tracking-widest font-medium">
+          Press Enter to send, Shift + Enter for new line
+        </p>
+      </div>
     </div>
   );
 }

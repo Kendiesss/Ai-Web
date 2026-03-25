@@ -4,8 +4,8 @@ import { Sparkles } from 'lucide-react';
 
 export default function Chat() {
   return (
-    <div className="pt-24 pb-10 px-6 h-screen flex flex-col max-w-7xl mx-auto">
-      <header className="mb-6 text-center">
+    <div className="pt-24 pb-10 px-6 min-h-screen flex flex-col max-w-7xl mx-auto">
+      <header className="mb-6 text-center shrink-0">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -36,7 +36,7 @@ export default function Chat() {
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.3, duration: 0.5 }}
-        className="flex-1 min-h-0 pb-6"
+        className="flex-1 min-h-[80vh] flex flex-col pb-6"
       >
         <ChatInterface />
       </motion.div>

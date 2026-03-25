@@ -68,11 +68,7 @@ export default function ChatInterface() {
 
     try {
       const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error('GEMINI_API_KEY is not configured. Please check your environment variables.');
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey: apiKey || '' });
       const model = "gemini-3-flash-preview";
       
       const systemInstruction = `
